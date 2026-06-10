@@ -31,7 +31,7 @@ git push -u origin main
 3. Create the schema (one-time, from your machine):
    ```bash
    cd server && npm install
-   DATABASE_URL="<neon-url>" npx prisma migrate dev --name init
+   DATABASE_URL=postgresql://neondb_owner:npg_hfevyl0jC9GK@ep-lucky-dust-ab62dbtw-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require npx prisma migrate dev --name init
    ```
    (or `npx prisma db push` if you prefer no migration files for V1.)
 
