@@ -528,7 +528,7 @@ export default function Travel() {
                   </td>
                   <td className="py-2 text-sm">
                     <div className="flex flex-col gap-1">
-                      {isManager && <ApproveRejectButtons request={r} />}
+                      {isManager && r.userId !== user.id && <ApproveRejectButtons request={r} />}
                       {isManager && r.status === 'APPROVED' && !r.bookingConfirmed && (
                         <button
                           className="text-indigo-600 text-xs hover:underline"
