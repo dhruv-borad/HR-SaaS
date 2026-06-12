@@ -59,22 +59,29 @@ router.post('/tenants', requireSuperAdmin, asyncHandler(async (req, res) => {
 
   // 3. Create the first admin user in the tenant's own database.
   const pw = tempPassword();
+  const passwordHash = await bcrypt.hash(pw, 10);
   const tenantClient = buildDirectClient(databaseUrl);
+  let newUser;
   try {
-    await tenantClient.user.create({
+    newUser = await tenantClient.user.create({
       data: {
         tenantId: tenant.id,
         email,
         firstName: adminFirstName || 'Admin',
         lastName: adminLastName || name,
         role: 'ADMIN',
-        passwordHash: await bcrypt.hash(pw, 10),
+        passwordHash,
         mustChangePassword: true,
       },
     });
   } finally {
     await tenantClient.$disconnect();
   }
+
+  // 4. Add to UserIndex in admin DB so login works without scanning all tenant DBs.
+  await adminPrisma.userIndex.create({
+    data: { id: newUser.id, tenantId: tenant.id, email, passwordHash, role: 'ADMIN', active: true },
+  });
 
   const t = templates.welcome(adminFirstName || 'there', email, pw);
   sendEmail({ to: email, ...t });

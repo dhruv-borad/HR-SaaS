@@ -1,18 +1,25 @@
 // Per-tenant database isolation: each tenant has their own Postgres database.
-// The admin DB (DATABASE_URL) stores only the Tenant table with a databaseUrl
-// column pointing to each tenant's own database.
+// The admin DB (DATABASE_URL) stores only the Tenant table.
+// Operational tables (User, Leave, Travel, Payroll, etc.) live in each tenant's DB.
 //
-// A lazy client pool (Map<tenantId, PrismaClient>) is maintained in memory.
-// The `prisma` export is a Proxy that reads the right client from AsyncLocalStorage
-// so all existing route files continue to work unchanged.
+// Two Prisma clients:
+//   adminPrisma  → admin DB (Tenant model only)
+//   tenant pool  → per-tenant DB (all operational models)
+//
+// The `prisma` Proxy routes:
+//   prisma.tenant  → adminPrisma.tenant  (transparently, so settings routes still work)
+//   prisma.*       → per-tenant client via AsyncLocalStorage
 
-import pkg from '@prisma/client';
+import adminPkg from '../generated/admin/index.js';
+import tenantPkg from '../generated/tenant/index.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const { PrismaClient } = pkg;
+const { PrismaClient: AdminPrismaClient } = adminPkg;
+const { PrismaClient: TenantPrismaClient } = tenantPkg;
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PRISMA_ROOT = join(__dirname, '../..');
 
@@ -26,16 +33,15 @@ const TENANTED = new Set([
 ]);
 
 // ─── Admin DB client ────────────────────────────────────────────────────────
-// Connects to DATABASE_URL (the master Neon DB) which holds only the Tenant
-// table. Used exclusively in super-admin and settings routes.
-const adminBase = new PrismaClient();
+// Connects to DATABASE_URL (the master Neon DB) which holds only the Tenant table.
+const adminBase = new AdminPrismaClient();
 export const adminPrisma = adminBase;
 
 // ─── Per-tenant client pool ──────────────────────────────────────────────────
-const clientPool = new Map(); // tenantId -> extended PrismaClient
+const clientPool = new Map(); // tenantId -> extended TenantPrismaClient
 
 function buildExtendedClient(databaseUrl) {
-  const base = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const base = new TenantPrismaClient({ datasources: { db: { url: databaseUrl } } });
   return base.$extends({
     query: {
       $allModels: {
@@ -75,10 +81,10 @@ function buildExtendedClient(databaseUrl) {
   });
 }
 
-// Raw client for a tenant DB — no extension, used for provisioning/admin queries
+// Raw tenant client — no extension, used for provisioning/admin queries
 // where there is no tenant context in ALS.
 export function buildDirectClient(databaseUrl) {
-  return new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  return new TenantPrismaClient({ datasources: { db: { url: databaseUrl } } });
 }
 
 export async function getTenantClient(tenantId) {
@@ -93,10 +99,15 @@ export async function getTenantClient(tenantId) {
 }
 
 // ─── Proxy export ────────────────────────────────────────────────────────────
-// Route files import `prisma` and use it as normal. This Proxy reads the
-// correct per-tenant client from AsyncLocalStorage at call time.
+// Route files use `prisma` as normal.
+// `prisma.tenant` transparently routes to adminPrisma so settings/auth routes
+// can read tenant config without any code changes.
+// All other models route to the per-tenant client from AsyncLocalStorage.
 export const prisma = new Proxy({}, {
   get(_, prop) {
+    // Tenant model lives in the admin DB, not per-tenant DBs.
+    if (prop === 'tenant') return adminBase.tenant;
+
     const ctx = tenantContext.getStore();
     if (!ctx?.client) {
       throw new Error(`prisma.${String(prop)} called outside tenant context — did you forget requireAuth()?`);
@@ -106,10 +117,9 @@ export const prisma = new Proxy({}, {
 });
 
 // ─── Migration runner ────────────────────────────────────────────────────────
-// Runs `prisma migrate deploy` against a new tenant database URL.
-// Called during tenant provisioning to set up the schema.
+// Runs `prisma migrate deploy` against a new tenant database using the tenant schema.
 export function runTenantMigrations(databaseUrl) {
-  execSync('npx prisma migrate deploy', {
+  execSync('npx prisma migrate deploy --schema prisma/tenant/schema.prisma', {
     env: { ...process.env, DATABASE_URL: databaseUrl },
     cwd: PRISMA_ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],

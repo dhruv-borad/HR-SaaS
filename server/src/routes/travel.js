@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { prisma } from '../lib/db.js';
+import { prisma, adminPrisma } from '../lib/db.js';
 import { requireAuth } from '../lib/auth.js';
 import { sendEmail, templates } from '../lib/email.js';
 import { asyncHandler, audit, num } from '../lib/util.js';
@@ -29,10 +29,13 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
   const start = new Date(startDate); const end = new Date(endDate);
   if (isNaN(start) || isNaN(end) || end < start) return res.status(400).json({ error: 'Invalid date range' });
 
-  const me = await prisma.user.findFirst({ where: { id: req.user.userId }, include: { manager: true, tenant: true } });
+  const [me, tenantCfg] = await Promise.all([
+    prisma.user.findFirst({ where: { id: req.user.userId }, include: { manager: true } }),
+    adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } }),
+  ]);
   const issues = [];
   if (me.travelMaxCostPerTrip != null && Number(estimatedCost) > num(me.travelMaxCostPerTrip)) {
-    issues.push(`Estimated cost exceeds your travel policy maximum of ${me.tenant.currency} ${me.travelMaxCostPerTrip}`);
+    issues.push(`Estimated cost exceeds your travel policy maximum of ${tenantCfg.currency} ${me.travelMaxCostPerTrip}`);
   }
   if (me.travelAllowedDestinations.length > 0 &&
       !me.travelAllowedDestinations.some((d) => d.toLowerCase() === String(destination).toLowerCase())) {

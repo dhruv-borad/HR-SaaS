@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { adminPrisma, prisma, runWithTenant } from '../lib/db.js';
+import { adminPrisma, prisma, getTenantClient } from '../lib/db.js';
 import {
   signAccessToken, signRefreshToken, verifyRefreshToken,
   setRefreshCookie, clearRefreshCookie, requireAuth,
@@ -15,22 +15,32 @@ const publicUser = (u) => ({
   tenantId: u.tenantId,
 });
 
-// Login is the one pre-tenant query: we don't know the tenant until the user
-// is found, so it uses the unscoped client, then everything else is scoped.
+// Login: look up email in UserIndex (admin DB) to avoid scanning all tenant DBs,
+// then fetch the full user from the correct tenant DB.
 router.post('/login', asyncHandler(async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-  const user = await adminPrisma.user.findUnique({ where: { email: String(email).toLowerCase() }, include: { tenant: true } });
-  if (!user || !user.active) return res.status(401).json({ error: 'Invalid credentials' });
-  if (user.tenant.status !== 'ACTIVE') return res.status(403).json({ error: 'Account suspended. Contact support.' });
+  const cred = await adminPrisma.userIndex.findUnique({ where: { email: String(email).toLowerCase() } });
+  if (!cred || !cred.active) return res.status(401).json({ error: 'Invalid credentials' });
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
+  const ok = await bcrypt.compare(password, cred.passwordHash);
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+
+  const tenant = await adminPrisma.tenant.findUnique({ where: { id: cred.tenantId } });
+  if (!tenant || tenant.status !== 'ACTIVE') return res.status(403).json({ error: 'Account suspended. Contact support.' });
+
+  const tenantClient = await getTenantClient(cred.tenantId);
+  const user = await tenantClient.user.findUnique({ where: { id: cred.id } });
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
   const payload = { userId: user.id, tenantId: user.tenantId, role: user.role };
   setRefreshCookie(res, signRefreshToken(payload));
-  res.json({ accessToken: signAccessToken(payload), user: publicUser(user), tenant: { id: user.tenant.id, name: user.tenant.name, currency: user.tenant.currency, plan: user.tenant.plan } });
+  res.json({
+    accessToken: signAccessToken(payload),
+    user: publicUser(user),
+    tenant: { id: tenant.id, name: tenant.name, currency: tenant.currency, plan: tenant.plan },
+  });
 }));
 
 router.post('/refresh', asyncHandler(async (req, res) => {
@@ -39,20 +49,35 @@ router.post('/refresh', asyncHandler(async (req, res) => {
   let payload;
   try { payload = verifyRefreshToken(token); } catch { return res.status(401).json({ error: 'Invalid refresh token' }); }
 
-  const user = await adminPrisma.user.findUnique({ where: { id: payload.userId }, include: { tenant: true } });
-  if (!user || !user.active || user.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'Account unavailable' });
+  const cred = await adminPrisma.userIndex.findUnique({ where: { id: payload.userId } });
+  if (!cred || !cred.active) return res.status(401).json({ error: 'Account unavailable' });
+
+  const tenant = await adminPrisma.tenant.findUnique({ where: { id: cred.tenantId } });
+  if (!tenant || tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'Account unavailable' });
+
+  const tenantClient = await getTenantClient(cred.tenantId);
+  const user = await tenantClient.user.findUnique({ where: { id: cred.id } });
+  if (!user) return res.status(401).json({ error: 'Account unavailable' });
 
   const fresh = { userId: user.id, tenantId: user.tenantId, role: user.role };
   setRefreshCookie(res, signRefreshToken(fresh));
-  res.json({ accessToken: signAccessToken(fresh), user: publicUser(user), tenant: { id: user.tenant.id, name: user.tenant.name, currency: user.tenant.currency, plan: user.tenant.plan } });
+  res.json({
+    accessToken: signAccessToken(fresh),
+    user: publicUser(user),
+    tenant: { id: tenant.id, name: tenant.name, currency: tenant.currency, plan: tenant.plan },
+  });
 }));
 
 router.post('/logout', (req, res) => { clearRefreshCookie(res); res.json({ ok: true }); });
 
 router.get('/me', requireAuth(), asyncHandler(async (req, res) => {
-  const user = await prisma.user.findFirst({ where: { id: req.user.userId }, include: { tenant: true } });
+  const user = await prisma.user.findFirst({ where: { id: req.user.userId } });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json({ user: publicUser(user), tenant: { id: user.tenant.id, name: user.tenant.name, currency: user.tenant.currency, plan: user.tenant.plan } });
+  const tenant = await adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } });
+  res.json({
+    user: publicUser(user),
+    tenant: { id: tenant.id, name: tenant.name, currency: tenant.currency, plan: tenant.plan },
+  });
 }));
 
 // First login forces a change of the temporary password (spec 6.1).
@@ -66,10 +91,13 @@ router.post('/change-password', requireAuth(), asyncHandler(async (req, res) => 
   const ok = await bcrypt.compare(currentPassword, user.passwordHash);
   if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
 
+  const newHash = await bcrypt.hash(newPassword, 10);
   await prisma.user.updateMany({
     where: { id: user.id },
-    data: { passwordHash: await bcrypt.hash(newPassword, 10), mustChangePassword: false },
+    data: { passwordHash: newHash, mustChangePassword: false },
   });
+  // Keep UserIndex in sync so next login works.
+  await adminPrisma.userIndex.update({ where: { id: user.id }, data: { passwordHash: newHash } });
   res.json({ ok: true });
 }));
 

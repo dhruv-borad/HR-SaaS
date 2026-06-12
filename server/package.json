@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "build": "prisma generate",
-    "migrate:deploy": "prisma migrate deploy",
-    "db:push": "prisma db push"
+    "build": "prisma generate --schema prisma/admin/schema.prisma && prisma generate --schema prisma/tenant/schema.prisma",
+    "migrate:tenant": "prisma migrate deploy --schema prisma/tenant/schema.prisma",
+    "db:push:admin": "prisma db push --schema prisma/admin/schema.prisma"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",

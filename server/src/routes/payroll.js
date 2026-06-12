@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { prisma } from '../lib/db.js';
+import { prisma, adminPrisma } from '../lib/db.js';
 import { requireAuth } from '../lib/auth.js';
 import { sendEmail, templates } from '../lib/email.js';
 import { renderPayslip } from '../lib/payslip.js';
@@ -88,8 +88,8 @@ router.post('/runs/:id/finalise', requireAuth('ADMIN'), asyncHandler(async (req,
   for (const item of run.items) {
     sendEmail({ to: item.user.email, ...templates.payslip(item.user.firstName, run.month, run.year) });
     if (num(item.expenseAdditions) > 0) {
-      const tenant = await prisma.user.findFirst({ where: { id: item.userId }, include: { tenant: true } });
-      sendEmail({ to: item.user.email, ...templates.expenseInPayroll(item.user.firstName, num(item.expenseAdditions).toFixed(2), tenant.tenant.currency) });
+      const tenantCfg = await adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } });
+      sendEmail({ to: item.user.email, ...templates.expenseInPayroll(item.user.firstName, num(item.expenseAdditions).toFixed(2), tenantCfg.currency) });
     }
   }
   await audit('PayrollRun', run.id, 'FINALISED', req.user.userId);
@@ -121,15 +121,16 @@ router.get('/my-payslips', requireAuth(), asyncHandler(async (req, res) => {
 router.get('/items/:id/payslip', requireAuth(), asyncHandler(async (req, res) => {
   const item = await prisma.payrollItem.findFirst({
     where: { id: req.params.id },
-    include: { run: true, user: { include: { tenant: true } } },
+    include: { run: true, user: true },
   });
   if (!item) return res.status(404).json({ error: 'Payslip not found' });
   if (req.user.role !== 'ADMIN' && item.userId !== req.user.userId) return res.status(403).json({ error: 'Forbidden' });
   if (item.run.status !== 'FINALISED' && req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Run not finalised yet' });
 
+  const tenantCfg = await adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="payslip-${item.run.year}-${String(item.run.month).padStart(2, '0')}.pdf"`);
-  renderPayslip({ tenant: item.user.tenant, user: item.user, run: item.run, item }, res);
+  renderPayslip({ tenant: tenantCfg, user: item.user, run: item.run, item }, res);
 }));
 
 export default router;

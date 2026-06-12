@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../src/generated/tenant"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Tenant-scoped schema — runs against each customer's own isolated Neon database.
+// No Tenant model here; Tenant metadata lives in the admin DB (prisma/admin/schema.prisma).
+// All models carry tenantId as a plain column (no cross-DB foreign key).
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ExpenseStatus {
+  PENDING
+  MANAGER_APPROVED
+  APPROVED
+  REJECTED
+}
+
+enum PayrollStatus {
+  DRAFT
+  FINALISED
+}
+
+model User {
+  id                        String   @id @default(uuid())
+  tenantId                  String
+  email                     String   @unique
+  passwordHash              String
+  firstName                 String
+  lastName                  String
+  role                      Role     @default(EMPLOYEE)
+  department                String?
+  salaryMonthly             Decimal  @default(0) @db.Decimal(12, 2)
+  travelMaxCostPerTrip      Decimal? @db.Decimal(12, 2)
+  travelAllowedDestinations String[] @default([])
+  managerId                 String?
+  manager                   User?    @relation("ManagerReports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports                   User[]   @relation("ManagerReports")
+  mustChangePassword        Boolean  @default(true)
+  active                    Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+
+  leaveBalances  LeaveBalance[]
+  leaveRequests  LeaveRequest[]
+  travelRequests TravelRequest[]
+  expenseClaims  ExpenseClaim[]
+  payrollItems   PayrollItem[]
+
+  @@index([tenantId])
+}
+
+model LeaveType {
+  id          String  @id @default(uuid())
+  tenantId    String
+  name        String
+  daysPerYear Decimal @default(0) @db.Decimal(6, 2)
+  paid        Boolean @default(true)
+
+  balances LeaveBalance[]
+  requests LeaveRequest[]
+
+  @@unique([tenantId, name])
+}
+
+model LeaveBalance {
+  id          String    @id @default(uuid())
+  tenantId    String
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  balance     Decimal   @default(0) @db.Decimal(6, 2)
+
+  @@unique([userId, leaveTypeId])
+  @@index([tenantId])
+}
+
+model LeaveRequest {
+  id               String        @id @default(uuid())
+  tenantId         String
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveTypeId      String
+  leaveType        LeaveType     @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  startDate        DateTime
+  endDate          DateTime
+  days             Decimal       @db.Decimal(6, 2)
+  notes            String?
+  status           RequestStatus @default(PENDING)
+  decisionNote     String?
+  decidedById      String?
+  decidedAt        DateTime?
+  payrollDeduction Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+
+  @@index([tenantId, status])
+}
+
+model TravelRequest {
+  id               String        @id @default(uuid())
+  tenantId         String
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destination      String
+  startDate        DateTime
+  endDate          DateTime
+  purpose          String
+  estimatedCost    Decimal       @db.Decimal(12, 2)
+  fullPrice        Decimal?      @db.Decimal(12, 2)
+  actualSpend      Decimal       @default(0) @db.Decimal(12, 2)
+  policyCompliant  Boolean?
+  policyNotes      String?
+  status           RequestStatus @default(PENDING)
+  decisionNote     String?
+  decidedById      String?
+  decidedAt        DateTime?
+  bookingConfirmed Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+
+  expenses ExpenseClaim[]
+
+  @@index([tenantId, status])
+}
+
+model ExpenseClaim {
+  id                 String         @id @default(uuid())
+  tenantId           String
+  userId             String
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount             Decimal        @db.Decimal(12, 2)
+  category           String
+  description        String?
+  receiptKey         String?
+  status             ExpenseStatus  @default(PENDING)
+  managerDecidedById String?
+  managerDecidedAt   DateTime?
+  financeDecidedById String?
+  financeDecidedAt   DateTime?
+  decisionNote       String?
+  travelRequestId    String?
+  travelRequest      TravelRequest? @relation(fields: [travelRequestId], references: [id], onDelete: SetNull)
+  payrollItemId      String?
+  payrollItem        PayrollItem?   @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
+  createdAt          DateTime       @default(now())
+
+  @@index([tenantId, status])
+}
+
+model PayrollRun {
+  id          String        @id @default(uuid())
+  tenantId    String
+  year        Int
+  month       Int
+  status      PayrollStatus @default(DRAFT)
+  createdById String?
+  createdAt   DateTime      @default(now())
+  finalisedAt DateTime?
+
+  items PayrollItem[]
+
+  @@unique([tenantId, year, month])
+}
+
+model PayrollItem {
+  id               String     @id @default(uuid())
+  tenantId         String
+  runId            String
+  run              PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  baseSalary       Decimal    @db.Decimal(12, 2)
+  expenseAdditions Decimal    @default(0) @db.Decimal(12, 2)
+  leaveDeductions  Decimal    @default(0) @db.Decimal(12, 2)
+  netPay           Decimal    @db.Decimal(12, 2)
+  payslipKey       String?
+
+  expenses ExpenseClaim[]
+
+  @@unique([runId, userId])
+  @@index([tenantId])
+}
+
+model ApprovalWorkflow {
+  id          String @id @default(uuid())
+  tenantId    String
+  requestType String
+  approverRole Role  @default(MANAGER)
+
+  @@unique([tenantId, requestType])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  entityType String
+  entityId   String
+  action     String
+  actorId    String?
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, entityType, entityId])
+}

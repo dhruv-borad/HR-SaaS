@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { prisma } from '../lib/db.js';
+import { adminPrisma, prisma } from '../lib/db.js';
 import { requireAuth } from '../lib/auth.js';
 import { sendEmail, templates } from '../lib/email.js';
 import { asyncHandler, tempPassword, audit } from '../lib/util.js';
@@ -39,6 +39,7 @@ router.post('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   }
 
   const pw = tempPassword();
+  const passwordHash = await bcrypt.hash(pw, 10);
   let user;
   try {
     user = await prisma.user.create({
@@ -49,13 +50,18 @@ router.post('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
         travelAllowedDestinations: Array.isArray(travelAllowedDestinations)
           ? travelAllowedDestinations.map((s) => String(s).trim()).filter(Boolean)
           : [],
-        passwordHash: await bcrypt.hash(pw, 10), mustChangePassword: true,
+        passwordHash, mustChangePassword: true,
       },
     });
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'A user with this email already exists' });
     throw err;
   }
+
+  // Keep UserIndex in admin DB in sync so login works.
+  await adminPrisma.userIndex.create({
+    data: { id: user.id, tenantId: req.user.tenantId, email: user.email, passwordHash, role: user.role, active: true },
+  });
 
   // Seed a balance row for each leave type the tenant has configured (spec 7.2).
   const types = await prisma.leaveType.findMany();
@@ -88,7 +94,7 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   if (lastName !== undefined) data.lastName = lastName;
   if (role !== undefined) data.role = role;
   if (department !== undefined) data.department = department || null;
-  if (salaryMonthly !== undefined) data.salaryMonthly = salaryMonthly; // feeds next payroll run (spec 7.1)
+  if (salaryMonthly !== undefined) data.salaryMonthly = salaryMonthly;
   if (managerId !== undefined) data.managerId = managerId || null;
   if (travelMaxCostPerTrip !== undefined) data.travelMaxCostPerTrip = travelMaxCostPerTrip === null || travelMaxCostPerTrip === '' ? null : travelMaxCostPerTrip;
   if (travelAllowedDestinations !== undefined) {
@@ -98,6 +104,12 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   }
 
   await prisma.user.updateMany({ where: { id: existing.id }, data });
+
+  // Sync role to UserIndex if changed (used by requireAuth role checks on next login).
+  if (role !== undefined && role !== existing.role) {
+    await adminPrisma.userIndex.update({ where: { id: existing.id }, data: { role } });
+  }
+
   if (salaryMonthly !== undefined && String(salaryMonthly) !== String(existing.salaryMonthly)) {
     await audit('User', existing.id, 'SALARY_CHANGED', req.user.userId, `from ${existing.salaryMonthly} to ${salaryMonthly}`);
   }
@@ -111,6 +123,7 @@ router.post('/:id/deactivate', requireAuth('ADMIN'), asyncHandler(async (req, re
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
   if (existing.id === req.user.userId) return res.status(400).json({ error: 'You cannot deactivate yourself' });
   await prisma.user.updateMany({ where: { id: existing.id }, data: { active: false } });
+  await adminPrisma.userIndex.update({ where: { id: existing.id }, data: { active: false } });
   await audit('User', existing.id, 'DEACTIVATED', req.user.userId);
   res.json({ ok: true });
 }));
@@ -119,6 +132,7 @@ router.post('/:id/activate', requireAuth('ADMIN'), asyncHandler(async (req, res)
   const existing = await prisma.user.findFirst({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
   await prisma.user.updateMany({ where: { id: existing.id }, data: { active: true } });
+  await adminPrisma.userIndex.update({ where: { id: existing.id }, data: { active: true } });
   await audit('User', existing.id, 'ACTIVATED', req.user.userId);
   res.json({ ok: true });
 }));

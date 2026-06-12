@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
-import { prisma } from '../lib/db.js';
+import { prisma, adminPrisma } from '../lib/db.js';
 import { requireAuth } from '../lib/auth.js';
 import { sendEmail, templates } from '../lib/email.js';
 import { signedUploadUrl, signedDownloadUrl, r2Configured } from '../lib/r2.js';
@@ -79,8 +79,8 @@ router.post('/:id/approve', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async 
   if (role !== 'ADMIN' && claim.user.managerId !== userId) return res.status(403).json({ error: 'Only the employee\'s manager or an admin can decide this claim' });
   if (claim.userId === userId) return res.status(403).json({ error: 'You cannot approve your own claim' });
 
-  const me = await prisma.user.findFirst({ where: { id: userId }, include: { tenant: true } });
-  const needsFinance = num(claim.amount) >= num(me.tenant.expenseFinanceThreshold);
+  const tenantCfg = await adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } });
+  const needsFinance = num(claim.amount) >= num(tenantCfg.expenseFinanceThreshold);
   const nextStatus = needsFinance ? 'MANAGER_APPROVED' : 'APPROVED';
 
   await prisma.expenseClaim.updateMany({
