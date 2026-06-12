@@ -54,10 +54,112 @@ function TenantHealth({ tenantId }) {
   );
 }
 
+// ─── Edit modal ───────────────────────────────────────────────────────────────
+function EditModal({ tenant, onClose }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    plan: tenant.plan,
+    headcount: String(tenant.headcount ?? ''),
+    billingContactName: tenant.billingContactName ?? '',
+    billingContactEmail: tenant.billingContactEmail ?? '',
+    databaseUrl: '',   // only filled if user wants to update it
+  });
+  const [error, setError] = useState('');
+  const [neonResult, setNeonResult] = useState(null);
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const autoCreate = useMutation({
+    mutationFn: () => api('/admin/neon/create-project', {
+      method: 'POST',
+      body: { projectName: `hr-${tenant.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now().toString(36)}` },
+    }),
+    onSuccess: (data) => { setNeonResult(data); setForm((f) => ({ ...f, databaseUrl: data.databaseUrl })); },
+    onError: (e) => setError(e.message),
+  });
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = {
+        plan: form.plan,
+        headcount: Number(form.headcount) || 0,
+        billingContactName: form.billingContactName || null,
+        billingContactEmail: form.billingContactEmail || null,
+      };
+      if (form.databaseUrl.trim()) body.databaseUrl = form.databaseUrl.trim();
+      return api(`/admin/tenants/${tenant.id}`, { method: 'PATCH', body });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenants'] });
+      qc.invalidateQueries({ queryKey: ['tenant-health', tenant.id] });
+      onClose();
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-6 w-full max-w-lg shadow-xl">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-gray-900">Edit — {tenant.name}</h2>
+          <button className="text-gray-400 text-xs hover:underline" onClick={onClose}>close</button>
+        </div>
+
+        {error && <p className="text-sm text-red-600 mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+
+        <div className="grid md:grid-cols-2 gap-x-4">
+          <Field label="Plan">
+            <select className={inp} value={form.plan} onChange={set('plan')}>
+              {PLANS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </Field>
+          <Field label="Headcount">
+            <input className={inp} type="number" min="0" value={form.headcount} onChange={set('headcount')} />
+          </Field>
+          <Field label="Billing contact name">
+            <input className={inp} value={form.billingContactName} onChange={set('billingContactName')} />
+          </Field>
+          <Field label="Billing contact email">
+            <input className={inp} type="email" value={form.billingContactEmail} onChange={set('billingContactEmail')} />
+          </Field>
+        </div>
+
+        {/* Database section */}
+        <div className="border border-gray-200 rounded-xl p-4 mb-4">
+          <p className="font-medium text-sm text-gray-900 mb-1">Database URL</p>
+          <p className="text-xs text-gray-500 mb-3">
+            {tenant.hasDatabase ? 'DB is configured. Only update if you need to replace the connection string.' : '⚠️ No database configured — this tenant cannot log in until a DB is set.'}
+          </p>
+          <div className="flex gap-2 mb-3">
+            <button className={btnGreen} disabled={autoCreate.isPending} onClick={() => { setError(''); autoCreate.mutate(); }}>
+              {autoCreate.isPending ? 'Creating…' : '✦ Auto-create Neon DB'}
+            </button>
+          </div>
+          {neonResult && (
+            <p className="mb-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              ✓ Project <b>{neonResult.projectName}</b> created.
+            </p>
+          )}
+          <Field label="Or paste connection string manually" hint="Leave blank to keep the existing URL">
+            <input className={inp} type="password" placeholder="postgresql://..." value={form.databaseUrl} onChange={set('databaseUrl')} />
+          </Field>
+        </div>
+
+        <div className="flex gap-2">
+          <button className={btnPrimary} disabled={save.isPending} onClick={() => { setError(''); save.mutate(); }}>
+            {save.isPending ? 'Saving…' : 'Save changes'}
+          </button>
+          <button className={btnOutline} onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Provision form ───────────────────────────────────────────────────────────
 function ProvisionForm({ onClose, onSuccess }) {
   const [form, setForm] = useState(blankForm);
-  const [step, setStep] = useState('details'); // 'details' | 'database'
+  const [step, setStep] = useState('details');
   const [neonResult, setNeonResult] = useState(null);
   const [error, setError] = useState('');
 
@@ -68,10 +170,7 @@ function ProvisionForm({ onClose, onSuccess }) {
       method: 'POST',
       body: { projectName: `hr-${form.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now().toString(36)}` },
     }),
-    onSuccess: (data) => {
-      setNeonResult(data);
-      setForm((f) => ({ ...f, databaseUrl: data.databaseUrl }));
-    },
+    onSuccess: (data) => { setNeonResult(data); setForm((f) => ({ ...f, databaseUrl: data.databaseUrl })); },
     onError: (e) => setError(e.message),
   });
 
@@ -103,7 +202,6 @@ function ProvisionForm({ onClose, onSuccess }) {
         <button className="text-gray-400 text-xs hover:underline" onClick={onClose}>close</button>
       </div>
 
-      {/* Step indicator */}
       <div className="flex items-center gap-3 mb-5">
         {['details', 'database'].map((s, i) => (
           <div key={s} className={`flex items-center gap-1.5 text-sm ${step === s ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
@@ -116,7 +214,6 @@ function ProvisionForm({ onClose, onSuccess }) {
 
       {error && <p className="text-sm text-red-600 mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
 
-      {/* Step 1: Company details */}
       {step === 'details' && (
         <>
           <div className="grid md:grid-cols-2 gap-x-4">
@@ -140,14 +237,12 @@ function ProvisionForm({ onClose, onSuccess }) {
         </>
       )}
 
-      {/* Step 2: Database */}
       {step === 'database' && (
         <>
           <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
             An isolated Neon database will be created for <b>{form.name}</b> and migrations will run automatically.
           </div>
 
-          {/* Auto-create */}
           <div className="border border-gray-200 rounded-xl p-4 mb-3">
             <div className="flex items-center justify-between">
               <div>
@@ -165,7 +260,6 @@ function ProvisionForm({ onClose, onSuccess }) {
             )}
           </div>
 
-          {/* Manual fallback */}
           <div className="border border-gray-200 rounded-xl p-4 mb-4">
             <p className="font-medium text-sm text-gray-900 mb-2">Or enter connection string manually</p>
             <Field label="Neon connection string" hint="Create a project on neon.tech and paste the full connection string">
@@ -193,6 +287,7 @@ export default function Tenants() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [migrateTarget, setMigrateTarget] = useState(null);
   const [migrateStatus, setMigrateStatus] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
 
   const { data: tenants = [], isLoading } = useQuery({
     queryKey: ['tenants'],
@@ -221,8 +316,13 @@ export default function Tenants() {
     return true;
   });
 
+  const editTenant = editTarget ? tenants.find((t) => t.id === editTarget) : null;
+
   return (
     <div className="space-y-5">
+      {/* Edit modal */}
+      {editTenant && <EditModal tenant={editTenant} onClose={() => setEditTarget(null)} />}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -315,6 +415,10 @@ export default function Tenants() {
                   </td>
                   <td className="py-3 px-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-3">
+                      <button className="text-xs text-gray-600 hover:underline"
+                        onClick={() => setEditTarget(t.id)}>
+                        Edit
+                      </button>
                       <button className="text-xs text-indigo-600 hover:underline"
                         onClick={() => { setMigrateTarget(t.id); setMigrateStatus(null); }}>
                         Migrate
