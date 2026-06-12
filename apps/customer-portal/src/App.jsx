@@ -77,6 +77,7 @@ export default function App() {
 
   const isAdmin = user.role === 'ADMIN';
   const isManager = user.role === 'MANAGER' || isAdmin;
+  const isEmployee = user.role === 'EMPLOYEE';
   return (
     <Shell>
       <Routes>
