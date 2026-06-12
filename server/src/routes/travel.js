@@ -80,6 +80,7 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
 
   const request = await prisma.travelRequest.create({
     data: {
+      tenantId: req.user.tenantId,
       userId: req.user.userId, origin, destination, tripType, startDate: start, endDate: end, purpose,
       estimatedCost, fullPrice: fullPrice ?? null,
       flightData: flightData ?? undefined,
@@ -89,7 +90,7 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
 
   if (me.manager) sendEmail({ to: me.manager.email, ...templates.actionRequired(me.manager.firstName, `${me.firstName} ${me.lastName}`, 'travel') });
   sendEmail({ to: me.email, ...templates.submitted(me.firstName, 'travel') });
-  await audit('TravelRequest', request.id, 'SUBMITTED', req.user.userId);
+  await audit('TravelRequest', request.id, 'SUBMITTED', req.user.userId, req.user.tenantId);
   res.status(201).json(request);
 }));
 
@@ -112,7 +113,7 @@ router.post('/:id/approve', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async 
     data: { status: 'APPROVED', decidedById: req.user.userId, decidedAt: new Date(), decisionNote: req.body?.note || null },
   });
   sendEmail({ to: request.user.email, ...templates.decision(request.user.firstName, 'travel', true) });
-  await audit('TravelRequest', request.id, 'APPROVED', req.user.userId, `policyCompliant=${request.policyCompliant}`);
+  await audit('TravelRequest', request.id, 'APPROVED', req.user.userId, `policyCompliant=${request.policyCompliant}`, req.user.tenantId);
   res.json({ ok: true });
 }));
 
@@ -120,35 +121,4 @@ router.post('/:id/reject', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (
   const request = await loadForDecision(req, res);
   if (!request) return;
   await prisma.travelRequest.updateMany({
-    where: { id: request.id, status: 'PENDING' },
-    data: { status: 'REJECTED', decidedById: req.user.userId, decidedAt: new Date(), decisionNote: req.body?.note || null },
-  });
-  sendEmail({ to: request.user.email, ...templates.decision(request.user.firstName, 'travel', false, req.body?.note) });
-  await audit('TravelRequest', request.id, 'REJECTED', req.user.userId);
-  res.json({ ok: true });
-}));
-
-// Booking is manual in V1 (spec 7.3) — this records the offline confirmation.
-router.post('/:id/confirm-booking', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (req, res) => {
-  const request = await prisma.travelRequest.findFirst({ where: { id: req.params.id } });
-  if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.status !== 'APPROVED') return res.status(409).json({ error: 'Trip must be approved first' });
-  await prisma.travelRequest.updateMany({ where: { id: request.id }, data: { bookingConfirmed: true } });
-  await audit('TravelRequest', request.id, 'BOOKING_CONFIRMED', req.user.userId);
-  res.json({ ok: true });
-}));
-
-// Record actual spend / full-price comparison for the savings report (spec 7.3/7.6).
-router.patch('/:id/spend', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (req, res) => {
-  const request = await prisma.travelRequest.findFirst({ where: { id: req.params.id } });
-  if (!request) return res.status(404).json({ error: 'Request not found' });
-  const { actualSpend, fullPrice } = req.body || {};
-  const data = {};
-  if (actualSpend !== undefined) data.actualSpend = actualSpend;
-  if (fullPrice !== undefined) data.fullPrice = fullPrice;
-  await prisma.travelRequest.updateMany({ where: { id: request.id }, data });
-  await audit('TravelRequest', request.id, 'SPEND_UPDATED', req.user.userId);
-  res.json({ ok: true });
-}));
-
-export default router;
+    where: {

@@ -28,9 +28,9 @@ export function businessDaysInMonth(start, end, year, month) {
   return businessDays(s, e);
 }
 
-export async function audit(entityType, entityId, action, actorId, detail) {
+export async function audit(entityType, entityId, action, actorId, detail, tenantId) {
   try {
-    await prisma.auditLog.create({ data: { entityType, entityId, action, actorId, detail: detail ?? null } });
+    await prisma.auditLog.create({ data: { tenantId: tenantId ?? 'system', entityType, entityId, action, actorId, detail: detail ?? null } });
   } catch (err) {
     console.error('audit log failed:', err.message);
   }

@@ -19,7 +19,7 @@ router.post('/runs', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   const employees = await prisma.user.findMany({ where: { active: true } });
   if (!employees.length) return res.status(400).json({ error: 'No active employees' });
 
-  const run = await prisma.payrollRun.create({ data: { year: y, month: m, createdById: req.user.userId } });
+  const run = await prisma.payrollRun.create({ data: { tenantId: req.user.tenantId, year: y, month: m, createdById: req.user.userId } });
 
   // Approved expenses not yet attached to any payroll run.
   const pendingExpenses = await prisma.expenseClaim.findMany({ where: { status: 'APPROVED', payrollItemId: null } });
@@ -52,14 +52,14 @@ router.post('/runs', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
     const net = Math.round((base + expenseTotal - deduction) * 100) / 100;
 
     const item = await prisma.payrollItem.create({
-      data: { runId: run.id, userId: emp.id, baseSalary: base, expenseAdditions: expenseTotal, leaveDeductions: deduction, netPay: net },
+      data: { tenantId: req.user.tenantId, runId: run.id, userId: emp.id, baseSalary: base, expenseAdditions: expenseTotal, leaveDeductions: deduction, netPay: net },
     });
     if (expenses.length) {
       await prisma.expenseClaim.updateMany({ where: { id: { in: expenses.map((e) => e.id) } }, data: { payrollItemId: item.id } });
     }
   }
 
-  await audit('PayrollRun', run.id, 'CREATED', req.user.userId, `${m}/${y}`);
+  await audit('PayrollRun', run.id, 'CREATED', req.user.userId, `${m}/${y}`, req.user.tenantId);
   const full = await prisma.payrollRun.findFirst({ where: { id: run.id }, include: { items: { include: { user: { select: { firstName: true, lastName: true, email: true, department: true } } } } } });
   res.status(201).json(full);
 }));
@@ -92,7 +92,7 @@ router.post('/runs/:id/finalise', requireAuth('ADMIN'), asyncHandler(async (req,
       sendEmail({ to: item.user.email, ...templates.expenseInPayroll(item.user.firstName, num(item.expenseAdditions).toFixed(2), tenantCfg.currency) });
     }
   }
-  await audit('PayrollRun', run.id, 'FINALISED', req.user.userId);
+  await audit('PayrollRun', run.id, 'FINALISED', req.user.userId, req.user.tenantId);
   res.json({ ok: true });
 }));
 
@@ -103,7 +103,7 @@ router.delete('/runs/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) =
   if (run.status === 'FINALISED') return res.status(409).json({ error: 'Finalised runs cannot be deleted' });
   await prisma.expenseClaim.updateMany({ where: { payrollItem: { runId: run.id } }, data: { payrollItemId: null } });
   await prisma.payrollRun.deleteMany({ where: { id: run.id } });
-  await audit('PayrollRun', run.id, 'DELETED', req.user.userId);
+  await audit('PayrollRun', run.id, 'DELETED', req.user.userId, req.user.tenantId);
   res.json({ ok: true });
 }));
 
@@ -129,8 +129,4 @@ router.get('/items/:id/payslip', requireAuth(), asyncHandler(async (req, res) =>
 
   const tenantCfg = await adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="payslip-${item.run.year}-${String(item.run.month).padStart(2, '0')}.pdf"`);
-  renderPayslip({ tenant: tenantCfg, user: item.user, run: item.run, item }, res);
-}));
-
-export default router;
+  res.setHeader('Content-Disposition', `inline; filename="payslip-${item.run.year}-${String(item.run.month).padStart(2, '0

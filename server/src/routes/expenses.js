@@ -54,7 +54,7 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
   }
 
   const claim = await prisma.expenseClaim.create({
-    data: { userId: req.user.userId, amount, category, description: description || null, receiptKey: receiptKey || null, travelRequestId: travelRequestId || null },
+    data: { tenantId: req.user.tenantId, userId: req.user.userId, amount, category, description: description || null, receiptKey: receiptKey || null, travelRequestId: travelRequestId || null },
   });
 
   // Spend tracking against the trip (spec 7.3).
@@ -65,7 +65,7 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
   const me = await prisma.user.findFirst({ where: { id: req.user.userId }, include: { manager: true } });
   if (me?.manager) sendEmail({ to: me.manager.email, ...templates.actionRequired(me.manager.firstName, `${me.firstName} ${me.lastName}`, 'expense') });
   sendEmail({ to: me.email, ...templates.submitted(me.firstName, 'expense') });
-  await audit('ExpenseClaim', claim.id, 'SUBMITTED', req.user.userId, `amount=${amount}`);
+  await audit('ExpenseClaim', claim.id, 'SUBMITTED', req.user.userId, `amount=${amount}`, req.user.tenantId);
   res.status(201).json(claim);
 }));
 
@@ -103,7 +103,7 @@ router.post('/:id/finance-approve', requireAuth('ADMIN'), asyncHandler(async (re
     where: { id: claim.id, status: 'MANAGER_APPROVED' },
     data: { status: 'APPROVED', financeDecidedById: req.user.userId, financeDecidedAt: new Date() },
   });
-  await audit('ExpenseClaim', claim.id, 'FINANCE_APPROVED', req.user.userId);
+  await audit('ExpenseClaim', claim.id, 'FINANCE_APPROVED', req.user.userId, req.user.tenantId);
   sendEmail({ to: claim.user.email, ...templates.decision(claim.user.firstName, 'expense', true) });
   res.json({ ok: true });
 }));
@@ -128,7 +128,4 @@ router.get('/:id/audit', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (re
   const claim = await prisma.expenseClaim.findFirst({ where: { id: req.params.id } });
   if (!claim) return res.status(404).json({ error: 'Claim not found' });
   const logs = await prisma.auditLog.findMany({ where: { entityType: 'ExpenseClaim', entityId: claim.id }, orderBy: { createdAt: 'asc' } });
-  res.json(logs);
-}));
-
-export default router;
+  res.

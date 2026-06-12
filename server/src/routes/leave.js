@@ -46,7 +46,7 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
   }
 
   const request = await prisma.leaveRequest.create({
-    data: { userId: req.user.userId, leaveTypeId, startDate: start, endDate: end, days, notes: notes || null },
+    data: { tenantId: req.user.tenantId, userId: req.user.userId, leaveTypeId, startDate: start, endDate: end, days, notes: notes || null },
   });
 
   const me = await prisma.user.findFirst({ where: { id: req.user.userId }, include: { manager: true } });
@@ -55,7 +55,7 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
     sendEmail({ to: me.manager.email, ...t });
   }
   sendEmail({ to: me.email, ...templates.submitted(me.firstName, 'leave') });
-  await audit('LeaveRequest', request.id, 'SUBMITTED', req.user.userId);
+  await audit('LeaveRequest', request.id, 'SUBMITTED', req.user.userId, req.user.tenantId);
   res.status(201).json(request);
 }));
 
@@ -87,7 +87,7 @@ router.post('/:id/approve', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async 
     });
   }
   sendEmail({ to: request.user.email, ...templates.decision(request.user.firstName, 'leave', true) });
-  await audit('LeaveRequest', request.id, 'APPROVED', req.user.userId);
+  await audit('LeaveRequest', request.id, 'APPROVED', req.user.userId, req.user.tenantId);
   res.json({ ok: true });
 }));
 
@@ -99,8 +99,5 @@ router.post('/:id/reject', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (
     data: { status: 'REJECTED', decidedById: req.user.userId, decidedAt: new Date(), decisionNote: req.body?.note || null },
   });
   sendEmail({ to: request.user.email, ...templates.decision(request.user.firstName, 'leave', false, req.body?.note) });
-  await audit('LeaveRequest', request.id, 'REJECTED', req.user.userId);
+  await audit('LeaveRequest', request.id, 'REJECTED', req.user.userId, req.user.tenantId);
   res.json({ ok: true });
-}));
-
-export default router;
