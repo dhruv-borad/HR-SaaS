@@ -181,7 +181,7 @@ router.post('/neon/create-project', requireSuperAdmin, asyncHandler(async (req, 
   const response = await fetch('https://console.neon.tech/api/v2/projects', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ project: { name: projectName || `hr-tenant-${Date.now()}` } }),
+    body: JSON.stringify({ project: { name: projectName || `hr-tenant-${Date.now()}` }, org_id: process.env.NEON_ORG_ID || undefined }),
   });
 
   if (!response.ok) {
