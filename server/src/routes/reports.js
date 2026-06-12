@@ -83,7 +83,7 @@ async function exportRows(type) {
       return users.map((u) => ({
         firstName: u.firstName, lastName: u.lastName, email: u.email, role: u.role,
         department: u.department || '', manager: u.manager ? `${u.manager.firstName} ${u.manager.lastName}` : '',
-        active: u.active, salaryMonthly: num(u.salaryMonthly),
+        active: u.active, salaryAnnual: num(u.salaryAnnual),
       }));
     }
     case 'leave': {

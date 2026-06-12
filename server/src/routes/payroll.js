@@ -44,7 +44,7 @@ router.post('/runs', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   const WORKING_DAYS = 22; // standard monthly divisor for daily rate
 
   for (const emp of employees) {
-    const base = num(emp.salaryMonthly);
+    const base = num(emp.salaryAnnual) / 12;
     const expenses = expByUser.get(emp.id) || [];
     const expenseTotal = expenses.reduce((s, e) => s + num(e.amount), 0);
     const unpaidDays = leaveByUser.get(emp.id) || 0;

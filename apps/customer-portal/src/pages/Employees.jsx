@@ -4,7 +4,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { Card, Table, Badge, Empty, Field, inputCls, btnPrimary, btnGhost, ErrorMsg, fmtMoney } from '../lib/ui.jsx';
 
-const blank = { email: '', firstName: '', lastName: '', role: 'EMPLOYEE', department: '', salaryMonthly: '', managerId: '', travelMaxCostPerTrip: '', travelAllowedDestinations: '' };
+const blank = { email: '', firstName: '', lastName: '', role: 'EMPLOYEE', department: '', salaryYearly: '', managerId: '', travelMaxCostPerTrip: '', travelAllowedDestinations: '' };
 
 export default function Employees() {
   const { user, tenant } = useAuth();
@@ -20,7 +20,7 @@ export default function Employees() {
     mutationFn: async (f) => {
       const body = {
         ...f,
-        salaryMonthly: Number(f.salaryMonthly) || 0,
+        salaryAnnual: Number(f.salaryYearly) || 0,
         managerId: f.managerId || null,
         department: f.department || null,
         travelMaxCostPerTrip: f.travelMaxCostPerTrip === '' ? null : Number(f.travelMaxCostPerTrip),
@@ -74,8 +74,8 @@ export default function Employees() {
               </select>
             </Field>
             <Field label="Department"><input className={inputCls} value={form.department || ''} onChange={set('department')} /></Field>
-            <Field label={`Monthly salary (${tenant?.currency || 'USD'})`}>
-              <input className={inputCls} type="number" min="0" step="0.01" value={form.salaryMonthly} onChange={set('salaryMonthly')} />
+            <Field label={`Yearly salary (${tenant?.currency || 'USD'})`}>
+              <input className={inputCls} type="number" min="0" step="0.01" value={form.salaryYearly} onChange={set('salaryYearly')} />
             </Field>
             <Field label="Manager">
               <select className={inputCls} value={form.managerId || ''} onChange={set('managerId')}>
@@ -101,7 +101,7 @@ export default function Employees() {
 
       <Card>
         {isLoading ? <Empty text="Loading…" /> : !employees.length ? <Empty text="No employees yet." /> : (
-          <Table cols={['Name', 'Email', 'Role', 'Department', 'Manager', ...(isAdmin ? ['Salary'] : []), 'Status', ...(isAdmin ? [''] : [])]}>
+          <Table cols={['Name', 'Email', 'Role', 'Department', 'Manager', ...(isAdmin ? ['Yearly Salary'] : []), 'Status', ...(isAdmin ? [''] : [])]}>
             {employees.map((e) => (
               <tr key={e.id}>
                 <td className="py-2 pr-4 font-medium">{e.firstName} {e.lastName}</td>
@@ -109,11 +109,11 @@ export default function Employees() {
                 <td className="py-2 pr-4">{e.role}</td>
                 <td className="py-2 pr-4">{e.department || '—'}</td>
                 <td className="py-2 pr-4">{e.manager ? `${e.manager.firstName} ${e.manager.lastName}` : '—'}</td>
-                {isAdmin && <td className="py-2 pr-4">{fmtMoney(e.salaryMonthly, tenant?.currency)}</td>}
+                {isAdmin && <td className="py-2 pr-4">{fmtMoney(e.salaryAnnual, tenant?.currency)}</td>}
                 <td className="py-2 pr-4"><Badge value={e.active ? 'ACTIVE' : 'SUSPENDED'} /></td>
                 {isAdmin && (
                   <td className="py-2 text-right whitespace-nowrap">
-                    <button className="text-indigo-600 text-xs hover:underline mr-3" onClick={() => { setForm({ ...e, salaryMonthly: e.salaryMonthly, managerId: e.managerId || '', travelMaxCostPerTrip: e.travelMaxCostPerTrip ?? '', travelAllowedDestinations: (e.travelAllowedDestinations || []).join(', ') }); }}>Edit</button>
+                    <button className="text-indigo-600 text-xs hover:underline mr-3" onClick={() => { setForm({ ...e, salaryYearly: e.salaryAnnual, managerId: e.managerId || '', travelMaxCostPerTrip: e.travelMaxCostPerTrip ?? '', travelAllowedDestinations: (e.travelAllowedDestinations || []).join(', ') }); }}>Edit</button>
                     {e.id !== user.id && (
                       <button className="text-red-600 text-xs hover:underline" onClick={() => toggle.mutate({ id: e.id, active: e.active })}>
                         {e.active ? 'Deactivate' : 'Activate'}

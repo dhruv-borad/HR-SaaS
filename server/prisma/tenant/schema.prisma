@@ -45,7 +45,7 @@ model User {
   lastName                  String
   role                      Role     @default(EMPLOYEE)
   department                String?
-  salaryMonthly             Decimal  @default(0) @db.Decimal(12, 2)
+  salaryAnnual              Decimal  @default(0) @db.Decimal(12, 2)
   travelMaxCostPerTrip      Decimal? @db.Decimal(12, 2)
   travelAllowedDestinations String[] @default([])
   managerId                 String?

@@ -9,7 +9,7 @@ const router = Router();
 
 const view = (u) => ({
   id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName,
-  role: u.role, department: u.department, salaryMonthly: u.salaryMonthly,
+  role: u.role, department: u.department, salaryAnnual: u.salaryAnnual,
   travelMaxCostPerTrip: u.travelMaxCostPerTrip,
   travelAllowedDestinations: u.travelAllowedDestinations,
   managerId: u.managerId, active: u.active, createdAt: u.createdAt,
@@ -30,7 +30,7 @@ router.get('/orgchart', requireAuth(), asyncHandler(async (req, res) => {
 }));
 
 router.post('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
-  const { email, firstName, lastName, role = 'EMPLOYEE', department, salaryMonthly = 0, managerId, travelMaxCostPerTrip, travelAllowedDestinations } = req.body || {};
+  const { email, firstName, lastName, role = 'EMPLOYEE', department, salaryAnnual = 0, managerId, travelMaxCostPerTrip, travelAllowedDestinations } = req.body || {};
   if (!email || !firstName || !lastName) return res.status(400).json({ error: 'email, firstName, lastName are required' });
   if (!['ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   if (managerId) {
@@ -45,7 +45,7 @@ router.post('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
     user = await prisma.user.create({
       data: {
         email: String(email).toLowerCase(), firstName, lastName, role, department: department || null,
-        salaryMonthly, managerId: managerId || null,
+        salaryAnnual, managerId: managerId || null,
         travelMaxCostPerTrip: travelMaxCostPerTrip != null && travelMaxCostPerTrip !== '' ? travelMaxCostPerTrip : null,
         travelAllowedDestinations: Array.isArray(travelAllowedDestinations)
           ? travelAllowedDestinations.map((s) => String(s).trim()).filter(Boolean)
@@ -81,7 +81,7 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   const existing = await prisma.user.findFirst({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
 
-  const { firstName, lastName, role, department, salaryMonthly, managerId, travelMaxCostPerTrip, travelAllowedDestinations } = req.body || {};
+  const { firstName, lastName, role, department, salaryAnnual, managerId, travelMaxCostPerTrip, travelAllowedDestinations } = req.body || {};
   if (role && !['ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   if (managerId) {
     if (managerId === existing.id) return res.status(400).json({ error: 'Employee cannot manage themselves' });
@@ -94,7 +94,7 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   if (lastName !== undefined) data.lastName = lastName;
   if (role !== undefined) data.role = role;
   if (department !== undefined) data.department = department || null;
-  if (salaryMonthly !== undefined) data.salaryMonthly = salaryMonthly;
+  if (salaryAnnual !== undefined) data.salaryAnnual = salaryAnnual;
   if (managerId !== undefined) data.managerId = managerId || null;
   if (travelMaxCostPerTrip !== undefined) data.travelMaxCostPerTrip = travelMaxCostPerTrip === null || travelMaxCostPerTrip === '' ? null : travelMaxCostPerTrip;
   if (travelAllowedDestinations !== undefined) {
@@ -110,8 +110,8 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
     await adminPrisma.userIndex.update({ where: { id: existing.id }, data: { role } });
   }
 
-  if (salaryMonthly !== undefined && String(salaryMonthly) !== String(existing.salaryMonthly)) {
-    await audit('User', existing.id, 'SALARY_CHANGED', req.user.userId, `from ${existing.salaryMonthly} to ${salaryMonthly}`);
+  if (salaryAnnual !== undefined && String(salaryAnnual) !== String(existing.salaryAnnual)) {
+    await audit('User', existing.id, 'SALARY_CHANGED', req.user.userId, `from ${existing.salaryAnnual} to ${salaryAnnual}`);
   }
   const updated = await prisma.user.findFirst({ where: { id: existing.id }, include: { manager: true } });
   res.json(view(updated));

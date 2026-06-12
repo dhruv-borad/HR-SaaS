@@ -18,7 +18,7 @@ CREATE TABLE "User" (
     "lastName"                  TEXT         NOT NULL,
     "role"                      "Role"       NOT NULL DEFAULT 'EMPLOYEE',
     "department"                TEXT,
-    "salaryMonthly"             DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "salaryAnnual"              DECIMAL(12,2) NOT NULL DEFAULT 0,
     "travelMaxCostPerTrip"      DECIMAL(12,2),
     "travelAllowedDestinations" TEXT[]       NOT NULL DEFAULT ARRAY[]::TEXT[],
     "managerId"                 TEXT,
