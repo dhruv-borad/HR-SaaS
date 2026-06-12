@@ -12,16 +12,19 @@ import Payroll from './pages/Payroll.jsx';
 import Payslips from './pages/Payslips.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
+import Profile from './pages/Profile.jsx';
 
 function Shell({ children }) {
   const { user, tenant, logout } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user.role === 'ADMIN';
   const isManager = user.role === 'MANAGER' || isAdmin;
+  const isEmployee = user.role === 'EMPLOYEE';
 
   const links = [
     ['/', 'Dashboard', true],
-    ['/employees', 'Employees', true],
+    ['/employees', 'Employees', !isEmployee],
+    ['/profile', 'My Profile', isEmployee],
     ['/leave', 'Time Off', true],
     ['/travel', 'Travel', true],
     ['/expenses', 'Expenses', true],
@@ -78,7 +81,8 @@ export default function App() {
     <Shell>
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/employees" element={<Employees />} />
+        {!isEmployee && <Route path="/employees" element={<Employees />} />}
+        {isEmployee && <Route path="/profile" element={<Profile />} />}
         <Route path="/leave" element={<Leave />} />
         <Route path="/travel" element={<Travel />} />
         <Route path="/expenses" element={<Expenses />} />
