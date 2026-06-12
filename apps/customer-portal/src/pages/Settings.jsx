@@ -18,8 +18,6 @@ export default function Settings() {
       setForm({
         currency: settings.currency,
         expenseFinanceThreshold: settings.expenseFinanceThreshold ?? '',
-        travelMaxCostPerTrip: settings.travelMaxCostPerTrip ?? '',
-        travelAllowedDestinations: (settings.travelAllowedDestinations || []).join(', '),
       });
     }
   }, [settings, form]);
@@ -30,8 +28,6 @@ export default function Settings() {
       body: {
         currency: form.currency,
         expenseFinanceThreshold: Number(form.expenseFinanceThreshold) || 0,
-        travelMaxCostPerTrip: form.travelMaxCostPerTrip === '' ? null : Number(form.travelMaxCostPerTrip),
-        travelAllowedDestinations: form.travelAllowedDestinations.split(',').map((s) => s.trim()).filter(Boolean),
       },
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); setError(''); },
@@ -64,12 +60,7 @@ export default function Settings() {
           <Field label="Expense finance-approval threshold (amounts at/above need a second admin approval)">
             <input className={inputCls} type="number" min="0" step="0.01" value={form.expenseFinanceThreshold} onChange={(e) => setForm({ ...form, expenseFinanceThreshold: e.target.value })} />
           </Field>
-          <Field label="Travel: max cost per trip (blank = no limit)">
-            <input className={inputCls} type="number" min="0" step="0.01" value={form.travelMaxCostPerTrip} onChange={(e) => setForm({ ...form, travelMaxCostPerTrip: e.target.value })} />
-          </Field>
-          <Field label="Travel: allowed destinations (comma-separated, blank = all allowed)">
-            <input className={inputCls} placeholder="e.g. London, Berlin, Singapore" value={form.travelAllowedDestinations} onChange={(e) => setForm({ ...form, travelAllowedDestinations: e.target.value })} />
-          </Field>
+
         </div>
         <button className={btnPrimary} disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? 'Saving…' : 'Save policies'}</button>
       </Card>

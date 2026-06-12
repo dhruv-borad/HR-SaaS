@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { tenantContext } from './db.js';
+import { tenantContext, getTenantClient } from './db.js';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '7d';
@@ -31,9 +31,10 @@ export function clearRefreshCookie(res) {
 }
 
 // Customer-portal auth: Bearer access token -> req.user {userId, tenantId, role};
-// also opens the tenant context so every Prisma query is scoped (spec 4.2).
+// also opens the tenant context with the per-tenant Prisma client so every
+// query in the request is routed to that tenant's own database.
 export function requireAuth(...roles) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'Not authenticated' });
@@ -48,7 +49,13 @@ export function requireAuth(...roles) {
       return res.status(403).json({ error: 'Insufficient role' });
     }
     req.user = payload; // { userId, tenantId, role }
-    tenantContext.run({ tenantId: payload.tenantId }, next);
+    let client;
+    try {
+      client = await getTenantClient(payload.tenantId);
+    } catch (err) {
+      return res.status(503).json({ error: err.message || 'Tenant database unavailable' });
+    }
+    tenantContext.run({ tenantId: payload.tenantId, client }, next);
   };
 }
 

@@ -10,22 +10,14 @@ router.get('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   res.json({
     name: tenant.name, plan: tenant.plan, currency: tenant.currency,
     expenseFinanceThreshold: tenant.expenseFinanceThreshold,
-    travelMaxCostPerTrip: tenant.travelMaxCostPerTrip,
-    travelAllowedDestinations: tenant.travelAllowedDestinations,
   });
 }));
 
 router.put('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
-  const { currency, expenseFinanceThreshold, travelMaxCostPerTrip, travelAllowedDestinations } = req.body || {};
+  const { currency, expenseFinanceThreshold } = req.body || {};
   const data = {};
   if (currency !== undefined) data.currency = String(currency).toUpperCase().slice(0, 3);
   if (expenseFinanceThreshold !== undefined) data.expenseFinanceThreshold = expenseFinanceThreshold;
-  if (travelMaxCostPerTrip !== undefined) data.travelMaxCostPerTrip = travelMaxCostPerTrip === null || travelMaxCostPerTrip === '' ? null : travelMaxCostPerTrip;
-  if (travelAllowedDestinations !== undefined) {
-    data.travelAllowedDestinations = Array.isArray(travelAllowedDestinations)
-      ? travelAllowedDestinations.map((s) => String(s).trim()).filter(Boolean)
-      : [];
-  }
   await adminPrisma.tenant.update({ where: { id: req.user.tenantId }, data });
   await audit('Tenant', req.user.tenantId, 'SETTINGS_UPDATED', req.user.userId);
   res.json({ ok: true });

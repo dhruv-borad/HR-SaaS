@@ -10,6 +10,8 @@ const router = Router();
 const view = (u) => ({
   id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName,
   role: u.role, department: u.department, salaryMonthly: u.salaryMonthly,
+  travelMaxCostPerTrip: u.travelMaxCostPerTrip,
+  travelAllowedDestinations: u.travelAllowedDestinations,
   managerId: u.managerId, active: u.active, createdAt: u.createdAt,
   manager: u.manager ? { id: u.manager.id, firstName: u.manager.firstName, lastName: u.manager.lastName } : null,
 });
@@ -28,7 +30,7 @@ router.get('/orgchart', requireAuth(), asyncHandler(async (req, res) => {
 }));
 
 router.post('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
-  const { email, firstName, lastName, role = 'EMPLOYEE', department, salaryMonthly = 0, managerId } = req.body || {};
+  const { email, firstName, lastName, role = 'EMPLOYEE', department, salaryMonthly = 0, managerId, travelMaxCostPerTrip, travelAllowedDestinations } = req.body || {};
   if (!email || !firstName || !lastName) return res.status(400).json({ error: 'email, firstName, lastName are required' });
   if (!['ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   if (managerId) {
@@ -43,6 +45,10 @@ router.post('/', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
       data: {
         email: String(email).toLowerCase(), firstName, lastName, role, department: department || null,
         salaryMonthly, managerId: managerId || null,
+        travelMaxCostPerTrip: travelMaxCostPerTrip != null && travelMaxCostPerTrip !== '' ? travelMaxCostPerTrip : null,
+        travelAllowedDestinations: Array.isArray(travelAllowedDestinations)
+          ? travelAllowedDestinations.map((s) => String(s).trim()).filter(Boolean)
+          : [],
         passwordHash: await bcrypt.hash(pw, 10), mustChangePassword: true,
       },
     });
@@ -69,7 +75,7 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   const existing = await prisma.user.findFirst({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
 
-  const { firstName, lastName, role, department, salaryMonthly, managerId } = req.body || {};
+  const { firstName, lastName, role, department, salaryMonthly, managerId, travelMaxCostPerTrip, travelAllowedDestinations } = req.body || {};
   if (role && !['ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   if (managerId) {
     if (managerId === existing.id) return res.status(400).json({ error: 'Employee cannot manage themselves' });
@@ -84,6 +90,12 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   if (department !== undefined) data.department = department || null;
   if (salaryMonthly !== undefined) data.salaryMonthly = salaryMonthly; // feeds next payroll run (spec 7.1)
   if (managerId !== undefined) data.managerId = managerId || null;
+  if (travelMaxCostPerTrip !== undefined) data.travelMaxCostPerTrip = travelMaxCostPerTrip === null || travelMaxCostPerTrip === '' ? null : travelMaxCostPerTrip;
+  if (travelAllowedDestinations !== undefined) {
+    data.travelAllowedDestinations = Array.isArray(travelAllowedDestinations)
+      ? travelAllowedDestinations.map((s) => String(s).trim()).filter(Boolean)
+      : [];
+  }
 
   await prisma.user.updateMany({ where: { id: existing.id }, data });
   if (salaryMonthly !== undefined && String(salaryMonthly) !== String(existing.salaryMonthly)) {

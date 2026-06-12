@@ -4,7 +4,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { Card, Table, Badge, Empty, Field, inputCls, btnPrimary, btnGhost, ErrorMsg, fmtMoney } from '../lib/ui.jsx';
 
-const blank = { email: '', firstName: '', lastName: '', role: 'EMPLOYEE', department: '', salaryMonthly: '', managerId: '' };
+const blank = { email: '', firstName: '', lastName: '', role: 'EMPLOYEE', department: '', salaryMonthly: '', managerId: '', travelMaxCostPerTrip: '', travelAllowedDestinations: '' };
 
 export default function Employees() {
   const { user, tenant } = useAuth();
@@ -18,7 +18,16 @@ export default function Employees() {
 
   const save = useMutation({
     mutationFn: async (f) => {
-      const body = { ...f, salaryMonthly: Number(f.salaryMonthly) || 0, managerId: f.managerId || null, department: f.department || null };
+      const body = {
+        ...f,
+        salaryMonthly: Number(f.salaryMonthly) || 0,
+        managerId: f.managerId || null,
+        department: f.department || null,
+        travelMaxCostPerTrip: f.travelMaxCostPerTrip === '' ? null : Number(f.travelMaxCostPerTrip),
+        travelAllowedDestinations: f.travelAllowedDestinations
+          ? f.travelAllowedDestinations.split(',').map((s) => s.trim()).filter(Boolean)
+          : [],
+      };
       if (f.id) return api(`/api/employees/${f.id}`, { method: 'PATCH', body });
       return api('/api/employees', { method: 'POST', body });
     },
@@ -76,6 +85,12 @@ export default function Employees() {
                 ))}
               </select>
             </Field>
+            <Field label={`Travel: max cost per trip (${tenant?.currency || 'USD'}) — blank = no limit`}>
+              <input className={inputCls} type="number" min="0" step="0.01" value={form.travelMaxCostPerTrip || ''} onChange={set('travelMaxCostPerTrip')} />
+            </Field>
+            <Field label="Travel: allowed destinations (comma-separated, blank = all allowed)">
+              <input className={inputCls} placeholder="e.g. London, Berlin, Singapore" value={form.travelAllowedDestinations || ''} onChange={set('travelAllowedDestinations')} />
+            </Field>
           </div>
           <div className="flex gap-2 mt-2">
             <button className={btnPrimary} disabled={save.isPending} onClick={() => save.mutate(form)}>{save.isPending ? 'Saving…' : 'Save'}</button>
@@ -98,7 +113,7 @@ export default function Employees() {
                 <td className="py-2 pr-4"><Badge value={e.active ? 'ACTIVE' : 'SUSPENDED'} /></td>
                 {isAdmin && (
                   <td className="py-2 text-right whitespace-nowrap">
-                    <button className="text-indigo-600 text-xs hover:underline mr-3" onClick={() => { setForm({ ...e, salaryMonthly: e.salaryMonthly, managerId: e.managerId || '' }); }}>Edit</button>
+                    <button className="text-indigo-600 text-xs hover:underline mr-3" onClick={() => { setForm({ ...e, salaryMonthly: e.salaryMonthly, managerId: e.managerId || '', travelMaxCostPerTrip: e.travelMaxCostPerTrip ?? '', travelAllowedDestinations: (e.travelAllowedDestinations || []).join(', ') }); }}>Edit</button>
                     {e.id !== user.id && (
                       <button className="text-red-600 text-xs hover:underline" onClick={() => toggle.mutate({ id: e.id, active: e.active })}>
                         {e.active ? 'Deactivate' : 'Activate'}

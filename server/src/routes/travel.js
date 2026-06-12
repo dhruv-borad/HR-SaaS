@@ -30,14 +30,13 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
   if (isNaN(start) || isNaN(end) || end < start) return res.status(400).json({ error: 'Invalid date range' });
 
   const me = await prisma.user.findFirst({ where: { id: req.user.userId }, include: { manager: true, tenant: true } });
-  const tenant = me.tenant;
   const issues = [];
-  if (tenant.travelMaxCostPerTrip != null && Number(estimatedCost) > num(tenant.travelMaxCostPerTrip)) {
-    issues.push(`Estimated cost exceeds policy maximum of ${tenant.currency} ${tenant.travelMaxCostPerTrip}`);
+  if (me.travelMaxCostPerTrip != null && Number(estimatedCost) > num(me.travelMaxCostPerTrip)) {
+    issues.push(`Estimated cost exceeds your travel policy maximum of ${me.tenant.currency} ${me.travelMaxCostPerTrip}`);
   }
-  if (tenant.travelAllowedDestinations.length > 0 &&
-      !tenant.travelAllowedDestinations.some((d) => d.toLowerCase() === String(destination).toLowerCase())) {
-    issues.push(`Destination "${destination}" is not on the allowed list`);
+  if (me.travelAllowedDestinations.length > 0 &&
+      !me.travelAllowedDestinations.some((d) => d.toLowerCase() === String(destination).toLowerCase())) {
+    issues.push(`Destination "${destination}" is not on your allowed destinations list`);
   }
 
   const request = await prisma.travelRequest.create({
