@@ -61,11 +61,12 @@ export default function Approvals() {
 
       <Card title={`Travel (${pendingTravel.length})`}>
         {!pendingTravel.length ? <Empty text="Nothing waiting." /> : (
-          <Table cols={['Employee', 'Destination', 'Dates', 'Est. cost', 'Policy', '']}>
+          <Table cols={['Employee', 'Destination', 'Purpose', 'Dates', 'Est. cost', 'Policy', '']}>
             {pendingTravel.map((r) => (
               <tr key={r.id}>
                 <td className="py-2 pr-4">{r.user.firstName} {r.user.lastName}</td>
                 <td className="py-2 pr-4">{r.destination}</td>
+                <td className="py-2 pr-4 max-w-[180px] text-sm text-gray-600 truncate" title={r.purpose}>{r.purpose}</td>
                 <td className="py-2 pr-4">{fmtDate(r.startDate)} → {fmtDate(r.endDate)}</td>
                 <td className="py-2 pr-4">{fmtMoney(r.estimatedCost, cur)}</td>
                 <td className="py-2 pr-4 text-xs">{r.policyCompliant ? <span className="text-green-700">Compliant</span> : <span className="text-red-600" title={r.policyNotes}>Out of policy</span>}</td>
