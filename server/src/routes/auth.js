@@ -83,4 +83,22 @@ router.get('/me', requireAuth(), asyncHandler(async (req, res) => {
 // First login forces a change of the temporary password (spec 6.1).
 router.post('/change-password', requireAuth(), asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (!currentPassword || !newPassword) return res.status(400).json({ erro
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both passwords required' });
+  if (String(newPassword).length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+
+  const user = await prisma.user.findFirst({ where: { id: req.user.userId } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.updateMany({
+    where: { id: user.id },
+    data: { passwordHash: newHash, mustChangePassword: false },
+  });
+  // Keep UserIndex in sync so next login works.
+  await adminPrisma.userIndex.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+  res.json({ ok: true });
+}));
+
+export default router;

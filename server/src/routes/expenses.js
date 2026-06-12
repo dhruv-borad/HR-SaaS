@@ -131,4 +131,4 @@ router.get('/:id/audit', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (re
   res.json(logs);
 }));
 
-export defa
+export default router;

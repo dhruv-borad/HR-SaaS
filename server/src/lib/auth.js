@@ -65,4 +65,12 @@ export function requireSuperAdmin(req, res, next) {
   const secret = req.headers['x-admin-secret'];
   if (secret && process.env.ADMIN_SECRET && secret === process.env.ADMIN_SECRET) return next();
   const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      if (payload.role === 'SUPER_ADMIN') { req.user = payload; return next(); }
+    } catch { /* fall through */ }
+  }
+  return res.status(401).json({ error: 'Super admin authentication required' });
+}
