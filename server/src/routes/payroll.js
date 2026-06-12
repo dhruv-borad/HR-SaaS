@@ -129,4 +129,9 @@ router.get('/items/:id/payslip', requireAuth(), asyncHandler(async (req, res) =>
 
   const tenantCfg = await adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="payslip-${item.run.year}-${String(item.run.month).padStart(2, '0
+  res.setHeader('Content-Disposition', `inline; filename="payslip-${item.run.year}-${String(item.run.month).padStart(2, '0')}.pdf"`);
+  const pdfBuffer = await renderPayslip({ item, tenantName: tenantCfg.name, currency: tenantCfg.currency });
+  res.end(pdfBuffer);
+}));
+
+export default router;

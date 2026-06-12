@@ -121,4 +121,12 @@ router.post('/:id/reject', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (
   const request = await loadForDecision(req, res);
   if (!request) return;
   await prisma.travelRequest.updateMany({
-    where: {
+    where: { id: request.id, status: 'PENDING' },
+    data: { status: 'REJECTED', decidedById: req.user.userId, decidedAt: new Date(), decisionNote: req.body?.note || null },
+  });
+  sendEmail({ to: request.user.email, ...templates.decision(request.user.firstName, 'travel', false, req.body?.note) });
+  await audit('TravelRequest', request.id, 'REJECTED', req.user.userId, null, req.user.tenantId);
+  res.json({ ok: true });
+}));
+
+export default router;

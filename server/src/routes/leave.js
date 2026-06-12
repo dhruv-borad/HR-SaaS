@@ -101,3 +101,6 @@ router.post('/:id/reject', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (
   sendEmail({ to: request.user.email, ...templates.decision(request.user.firstName, 'leave', false, req.body?.note) });
   await audit('LeaveRequest', request.id, 'REJECTED', req.user.userId, req.user.tenantId);
   res.json({ ok: true });
+}));
+
+export default router;

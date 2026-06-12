@@ -128,4 +128,7 @@ router.get('/:id/audit', requireAuth('ADMIN', 'MANAGER'), asyncHandler(async (re
   const claim = await prisma.expenseClaim.findFirst({ where: { id: req.params.id } });
   if (!claim) return res.status(404).json({ error: 'Claim not found' });
   const logs = await prisma.auditLog.findMany({ where: { entityType: 'ExpenseClaim', entityId: claim.id }, orderBy: { createdAt: 'asc' } });
-  res.
+  res.json(logs);
+}));
+
+export default router;
