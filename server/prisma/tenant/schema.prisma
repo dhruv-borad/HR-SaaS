@@ -116,10 +116,13 @@ model TravelRequest {
   tenantId         String
   userId           String
   user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  origin           String        @default("")
   destination      String
+  tripType         String        @default("ONE_WAY")
   startDate        DateTime
   endDate          DateTime
   purpose          String
+  flightData       Json?
   estimatedCost    Decimal       @db.Decimal(12, 2)
   fullPrice        Decimal?      @db.Decimal(12, 2)
   actualSpend      Decimal       @default(0) @db.Decimal(12, 2)

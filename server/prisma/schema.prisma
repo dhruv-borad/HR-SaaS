@@ -255,5 +255,4 @@ model AuditLog {
   detail     String?
   createdAt  DateTime @default(now())
 
-  @@index([tenantId, entityType, entityId])
-}
+  

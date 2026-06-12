@@ -111,30 +111,4 @@ router.patch('/:id', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
   }
 
   if (salaryAnnual !== undefined && String(salaryAnnual) !== String(existing.salaryAnnual)) {
-    await audit('User', existing.id, 'SALARY_CHANGED', req.user.userId, `from ${existing.salaryAnnual} to ${salaryAnnual}`);
-  }
-  const updated = await prisma.user.findFirst({ where: { id: existing.id }, include: { manager: true } });
-  res.json(view(updated));
-}));
-
-// Deactivation locks login and excludes from payroll (spec 7.1).
-router.post('/:id/deactivate', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
-  const existing = await prisma.user.findFirst({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Employee not found' });
-  if (existing.id === req.user.userId) return res.status(400).json({ error: 'You cannot deactivate yourself' });
-  await prisma.user.updateMany({ where: { id: existing.id }, data: { active: false } });
-  await adminPrisma.userIndex.update({ where: { id: existing.id }, data: { active: false } });
-  await audit('User', existing.id, 'DEACTIVATED', req.user.userId);
-  res.json({ ok: true });
-}));
-
-router.post('/:id/activate', requireAuth('ADMIN'), asyncHandler(async (req, res) => {
-  const existing = await prisma.user.findFirst({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Employee not found' });
-  await prisma.user.updateMany({ where: { id: existing.id }, data: { active: true } });
-  await adminPrisma.userIndex.update({ where: { id: existing.id }, data: { active: true } });
-  await audit('User', existing.id, 'ACTIVATED', req.user.userId);
-  res.json({ ok: true });
-}));
-
-export default router;
+    await audi

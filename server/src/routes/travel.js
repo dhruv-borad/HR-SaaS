@@ -3,6 +3,8 @@ import { prisma, adminPrisma } from '../lib/db.js';
 import { requireAuth } from '../lib/auth.js';
 import { sendEmail, templates } from '../lib/email.js';
 import { asyncHandler, audit, num } from '../lib/util.js';
+import { searchFlights } from '../lib/serpapi.js';
+import { searchLocations } from '../lib/airports.js';
 
 const router = Router();
 
@@ -15,6 +17,40 @@ function scopeFor(req) {
   return { userId };
 }
 
+// Airport/city autocomplete — served from local static list, no external API call.
+router.get('/airports', requireAuth(), asyncHandler(async (req, res) => {
+  const { q } = req.query;
+  if (!q || String(q).trim().length < 2) return res.json([]);
+  res.json(searchLocations(String(q).trim()));
+}));
+
+// Live flight search via SerpApi (Google Flights).
+router.get('/search', requireAuth(), asyncHandler(async (req, res) => {
+  const { origin, destination, departureDate, returnDate, adults = '1' } = req.query;
+  if (!origin || !destination || !departureDate) {
+    return res.status(400).json({ error: 'origin, destination, departureDate are required' });
+  }
+
+  // Fetch the tenant currency so prices show in the right currency.
+  const tenantCfg = await adminPrisma.tenant.findUnique({ where: { id: req.user.tenantId } });
+  const currency = tenantCfg?.currency || 'USD';
+
+  const flights = await searchFlights({
+    origin: String(origin).toUpperCase(),
+    destination: String(destination).toUpperCase(),
+    departureDate: String(departureDate),
+    returnDate: returnDate ? String(returnDate) : undefined,
+    adults: parseInt(adults, 10) || 1,
+    currency,
+  });
+
+  // Also pass back the employee's travel budget so the UI can highlight over-budget flights.
+  const me = await prisma.user.findFirst({ where: { id: req.user.userId } });
+  const budget = me?.travelMaxCostPerTrip != null ? parseFloat(me.travelMaxCostPerTrip) : null;
+
+  res.json({ flights, budget, currency });
+}));
+
 router.get('/', requireAuth(), asyncHandler(async (req, res) => {
   const requests = await prisma.travelRequest.findMany({ where: scopeFor(req), include, orderBy: { createdAt: 'desc' } });
   res.json(requests);
@@ -22,7 +58,7 @@ router.get('/', requireAuth(), asyncHandler(async (req, res) => {
 
 // Submission runs the tenant travel-policy check (spec 7.3).
 router.post('/', requireAuth(), asyncHandler(async (req, res) => {
-  const { destination, startDate, endDate, purpose, estimatedCost, fullPrice } = req.body || {};
+  const { origin = '', destination, startDate, endDate, purpose, estimatedCost, fullPrice, tripType = 'ONE_WAY', flightData } = req.body || {};
   if (!destination || !startDate || !endDate || !purpose || estimatedCost == null) {
     return res.status(400).json({ error: 'destination, startDate, endDate, purpose, estimatedCost are required' });
   }
@@ -44,8 +80,9 @@ router.post('/', requireAuth(), asyncHandler(async (req, res) => {
 
   const request = await prisma.travelRequest.create({
     data: {
-      userId: req.user.userId, destination, startDate: start, endDate: end, purpose,
+      userId: req.user.userId, origin, destination, tripType, startDate: start, endDate: end, purpose,
       estimatedCost, fullPrice: fullPrice ?? null,
+      flightData: flightData ?? undefined,
       policyCompliant: issues.length === 0, policyNotes: issues.join('; ') || null,
     },
   });
